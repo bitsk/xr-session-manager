@@ -13,5 +13,4 @@
 *.buildinfo
 *.changes
 
-!/debian/source/
 !/debian/source/format
