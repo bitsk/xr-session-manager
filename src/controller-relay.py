@@ -32,7 +32,7 @@ def main():
     if os.geteuid() != 0 or not 0 <= args.seconds <= 3600:
         parser.error('Run as root; duration 0 (continuous) through 3600')
     if (Path('/etc/a081-rootfs-id').read_text().strip() != 'a081-steamos-arm64' or
-        Path('/proc/device-tree/model').read_bytes().rstrip(b'\0') != b'iQIYI Qiyu MIX (A081)'):
+        Path('/proc/device-tree/model').read_bytes().rstrip(b'\0') != b'iQIYI XR MIX (A081)'):
         parser.error('Expected A081 SteamOS')
     if directory.parent != Path('/run') or not re.fullmatch(r'a081-controller-pose-[A-Za-z0-9_-]+', directory.name):
         parser.error('Select a new /run/a081-controller-pose-TOKEN directory')

@@ -316,7 +316,7 @@ def main():
     if args.seconds != 0 and not 60 <= args.seconds <= 300:
         parser.error('--seconds must be 0 or 60..300')
     assert os.geteuid() == 0 and os.uname().machine == 'aarch64'
-    assert os.uname().release in ('7.3.0-qiyu-mix-steamos', '7.3.0-qiyu-mix-steamos-qcft-pair', '7.3.0-qiyu-mix-steamos-venus', '7.3.0-qiyu-mix-steamos-preempt')
+    assert os.uname().release in ('7.3.0-xr-mix-steamos', '7.3.0-xr-mix-steamos-qcft-pair', '7.3.0-xr-mix-steamos-venus', '7.3.0-xr-mix-steamos-preempt')
     assert Path('/etc/a081-rootfs-id').read_text().strip() == 'a081-steamos-arm64'
     assert b'A081' in Path('/proc/device-tree/model').read_bytes()
     if args.action == 'start':

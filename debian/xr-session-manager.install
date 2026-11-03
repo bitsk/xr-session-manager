@@ -1,0 +1,5 @@
+src/*.py usr/lib/xr/session/
+src/*.sh usr/lib/xr/session/
+plans usr/share/xr/session/
+integration usr/share/xr/session/
+bin/xr-session usr/bin/
