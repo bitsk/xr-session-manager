@@ -34,6 +34,13 @@ def main():
         return selected
 
     profile = json.loads(args.profile.read_text())
+    def remap(value):
+        if isinstance(value, str):
+            return value.replace('/opt/mix-native-interop', '/usr/lib/aarch64-linux-gnu/xr/native-interop')
+        if isinstance(value, list):return [remap(v) for v in value]
+        if isinstance(value, dict):return {k:remap(v) for k,v in value.items()}
+        return value
+    profile = remap(profile)
     output = inside(args.output)
     capsule = inside(args.capsule)
     if output.exists() or capsule.exists():
