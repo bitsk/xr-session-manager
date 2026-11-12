@@ -23,7 +23,8 @@ import traceback
 
 from stock_ov7251_ae import StockOv7251Ae, stereo_luma
 from passthrough_graph import PassthroughGraph
-from common import PREFIX, ROOTFS
+from common import PREFIX, ROOTFS, PROFILE
+import hashlib
 
 import gpiod
 from gpiod.line import Direction, Value
@@ -88,7 +89,14 @@ if visual:
     assert args.timing
     for name in ('visual_plugin', 'cdsp_runner', 'cdsp_daemon'):
         path = getattr(args, name).resolve()
-        assert path.is_file() and path.is_relative_to(base)
+        assert path.is_file()
+        if name == 'visual_plugin' and PROFILE.get('head_tracking_plugin'):
+            assert path == Path(PROFILE['head_tracking_plugin']).resolve()
+            assert hashlib.sha256(path.read_bytes()).hexdigest() == PROFILE['head_tracking_plugin_sha256']
+            info = path.stat()
+            assert info.st_uid == 0 and not info.st_mode & 0o022
+        else:
+            assert path.is_relative_to(base)
         setattr(args, name, path)
 if args.controller_helper:
     args.controller_helper = args.controller_helper.resolve()

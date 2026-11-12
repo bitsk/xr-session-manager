@@ -1,3 +1,15 @@
+xr-session-manager (0.1.2) unstable; urgency=medium
+
+  * Preserve deployed profile lifecycle and add optional hand consumer ownership.
+
+ -- bits <bigbits@hackx.cc>  Thu, 12 Nov 2026 10:43:15 +0800
+
+xr-session-manager (0.1.1) unstable; urgency=medium
+
+  * Initialize the compositor client interface for native OpenXR sessions.
+
+ -- bits <bigbits@hackx.cc>  Tue, 03 Nov 2026 15:43:45 +0800
+
 xr-session-manager (0.1.0) unstable; urgency=medium
 
   * Import independently maintained XR component and packaging.

@@ -1,2 +1,2 @@
 #!/bin/sh
-exec python3 /usr/lib/xr/session/session.py "$@"
+exec python3 /usr/lib/xr/session-manager/session.py "$@"

@@ -146,5 +146,10 @@ def environment(data):
     env.pop('QIYU_TRACKING_RECOVERY_DISPLAY_GUARD', None)
     if PROFILE.get('tracking_recovery_display_guard'):
         env['QIYU_TRACKING_RECOVERY_DISPLAY_GUARD'] = '1'
+    env.pop('XR_HAND_STATE_SOCKET', None)
+    env.pop('XR_SHELL_INPUT_MODE', None)
+    hand = PROFILE.get('hand_tracking', {})
+    if hand.get('enabled'):
+        env['XR_HAND_STATE_SOCKET'] = hand['state_socket']
     env.update(PROFILE.get('runtime_environment', {}))
     return env

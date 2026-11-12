@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """One continuous real capture; source exit closes all consumers before VR stop."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import signal
 import subprocess
 import time
 import traceback
-from common import PREFIX, UNIT, current
+from common import PREFIX, UNIT, current, PROFILE
+from hand_session import HandSession
 from controller_session import ControllerSession
 
 assert os.geteuid() == 0
@@ -21,6 +23,8 @@ processes, logs = {}, []
 result = {'trial': data['trial'], 'gate_seconds': data['seconds'], 'gain_v4l2': data['gain_v4l2'],
           'physical_accuracy_verified': False, 'controllers_started': False}
 controller = ControllerSession(data, PREFIX)
+hands = HandSession(PROFILE)
+hand_start_attempted = False
 
 
 def stop(_number, _frame):
@@ -56,6 +60,11 @@ def finish(name, seconds):
 
 
 try:
+    head_plugin = Path(PROFILE.get('head_tracking_plugin', str(tracking / 'liba081-qvr-client-live-stream.so')))
+    if PROFILE.get('head_tracking_plugin'):
+        expected = PROFILE['head_tracking_plugin_sha256']
+        if hashlib.sha256(head_plugin.read_bytes()).hexdigest() != expected:
+            raise RuntimeError('Selected head producer plugin checksum changed')
     controller_env = controller.start()
     result['controllers_started'] = controller.result['started']
     relay = spawn('relay', ['python3', str(PREFIX / 'relay.py'), '--source', data['raw_socket'],
@@ -65,13 +74,20 @@ try:
     producer = spawn('producer', ['python3', str(PREFIX / 'run-camera-rig.py'), str(tracking),
             str(tracking / 'a081-qvr-stock-live-stream'), '--timing',
             '--gate-seconds', str(data['seconds']), '--gain', str(data['gain_v4l2']),
-            '--visual-plugin', str(tracking / 'liba081-qvr-client-live-stream.so'),
+            '--visual-plugin', str(head_plugin),
             '--cdsp-runner', str(tracking / 'run-cdsp.sh'),
             '--cdsp-daemon', str(tracking / 'hexagonrpcd-a081')],
-            dict(os.environ, A081_QVR_TRACKING_SOCKET=data['raw_socket'], **controller_env))
+            dict(os.environ, A081_QVR_TRACKING_SOCKET=data['raw_socket'], **controller_env, **hands.environment()))
     source_ended = None
     while producer.poll() is None and not stopping:
         controller.check()
+        if hands.enabled and not hand_start_attempted and (raw / 'packets.bin').exists() and (raw / 'packets.bin').stat().st_size:
+            hand_start_attempted = True
+            try: hands.start()
+            except Exception as error: hands.result.update({'pass':False,'error':repr(error)})
+        # systemd stops the dependent hand unit before the head unit. The
+        # session records shutdown intent before submitting that transaction.
+        if hands.started and not current().get('shutdown_requested', False): hands.check()
         # A failed relay or evidence consumer is a failed trial, never a
         # reason to leave an apparently healthy UI with an old valid pose.
         for name, process in (('relay', relay), ('observer', observer)):
@@ -93,6 +109,7 @@ except BaseException as error:
 finally:
     # SIGTERM goes to the Python gate owner first. It lowers FSIN, writes S to
     # the existing stop pipe and waits for the original QVR/DSP clean close.
+    result['hand_tracking'] = hands.stop()
     finish('producer', 55)
     result['controller'] = controller.stop()
     if not result['controller']['pass']:

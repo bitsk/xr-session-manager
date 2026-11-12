@@ -101,6 +101,23 @@ def load(path):
         for k, v in scene.get('environment', {}).items():
             if not re.fullmatch('[A-Z_][A-Z0-9_]*', k) or not isinstance(v, str) or '\0' in v:
                 raise ValueError('Invalid native scene environment')
+    if data.get('head_tracking_plugin'):
+        plugin = data['head_tracking_plugin']
+        if (not isinstance(plugin, str) or not Path(plugin).is_absolute() or '..' in Path(plugin).parts or
+                any(c.isspace() for c in plugin) or '\0' in plugin or
+                not re.fullmatch('[0-9a-f]{64}', data.get('head_tracking_plugin_sha256', ''))):
+            raise ValueError('Head plugin selection requires an absolute path and exact SHA-256')
+    hand = data.get('hand_tracking', {})
+    if (not isinstance(hand, dict) or type(hand.get('enabled', False)) is not bool):
+        raise ValueError('Hand tracking requires an explicit enabled boolean')
+    if hand.get('enabled'):
+        if not re.fullmatch('[A-Za-z0-9_.@-]+[.]service', hand.get('unit', '')):
+            raise ValueError('Hand tracking requires an explicit consumer unit')
+        for key in ('camera_socket', 'state_socket'):
+            value = hand.get(key, '')
+            if (not value.startswith('/run/') or '..' in Path(value).parts or
+                    any(c.isspace() for c in value) or '\0' in value):
+                raise ValueError('Hand endpoints must be ordinary absolute /run paths')
     data['_path'] = str(path)
     data['_sha256'] = hashlib.sha256(payload).hexdigest()
     return data
