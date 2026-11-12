@@ -3,7 +3,7 @@
 
 Reuses the recipe verified in camera-barrier-r1/capture-barrier.py, with
 the XR V4L2 input component owning image buffers. No exposure time is invented.
-SteamOS-only isolated copy; input contracts unchanged.
+Profile-selected isolated session; input contracts unchanged.
 Run only inside the coordinator-owned hardware window.
 """
 import argparse
@@ -22,6 +22,8 @@ import time
 import traceback
 
 from stock_ov7251_ae import StockOv7251Ae, stereo_luma
+from passthrough_graph import PassthroughGraph
+from common import PREFIX, ROOTFS
 
 import gpiod
 from gpiod.line import Direction, Value
@@ -36,6 +38,11 @@ parser.add_argument('--cdsp-daemon', type=Path)
 parser.add_argument('--gate-seconds', type=float, default=2, help='Bounded real FSIN gate duration, 0 until explicit stop, or at most 300 seconds')
 parser.add_argument('--gain', type=int, choices=(16, 64), default=16)
 args = parser.parse_args()
+os.environ.pop('A081_PASSTHROUGH_CAMERA_NODES', None)
+passthrough_mode = os.environ.get('A081_PASSTHROUGH', '0')
+if passthrough_mode not in ('0', '1'):
+    parser.error('A081_PASSTHROUGH must be 0 or 1')
+
 startup_ae = os.environ.get('A081_QVR_STARTUP_AE', '')
 if startup_ae not in ('', 'stock-ov7251'):
     parser.error('Unknown startup AE policy')
@@ -66,10 +73,10 @@ signal.signal(signal.SIGINT, request_stop)
 args.controller_helper = args.controller_runner = None
 base, executable = args.base.resolve(), args.capture.resolve()
 assert os.geteuid() == 0 and platform.machine() == 'aarch64'
-assert Path('/etc/a081-rootfs-id').read_text().strip() == 'a081-steamos-arm64'
+assert Path('/etc/a081-rootfs-id').read_text().strip() == ROOTFS
 assert b'A081' in Path('/proc/device-tree/model').read_bytes()
 assert Path('/sys/module/qcom_camss/parameters/frame_headers').read_text().strip() == ('Y' if args.timing else 'N')
-assert base == Path('/opt/mix-vr-shell-controller/tracking')
+assert base == (PREFIX / 'tracking').resolve(strict=True)
 assert executable.is_file() and os.access(executable, os.X_OK)
 assert bool(args.controller_helper) == bool(args.controller_runner)
 visual = bool(args.visual_plugin)
@@ -191,6 +198,7 @@ result['controller_exposure_candidate'] = dict(
     tracking_lines=250, exact_stock_duration=False, hardware_verified=False)
 handles, watchers, saved_controls, saved_intervals = [], {}, {}, {}
 request = capture = controller = None
+passthrough_graph = None
 nordic = Path('/sys/bus/spi/devices/spi3.0')
 nordic_reset_owned = False
 stop_read, stop_write = os.pipe()
@@ -439,6 +447,14 @@ try:
         slot.update(sensors[slot['phy']])
         assert run(['media-ctl', '-e', slot['sensor_entity']]).strip() == slot['sensor_subdev']
     result['sensor_binding'] = 'immutable_sensor_to_csiphy_media_link'
+    if passthrough_mode == '1':
+        # Resolve all extra resources before changing the four tracking paths.
+        try:
+            passthrough_graph = PassthroughGraph(run, graph, out)
+        except Exception as error:
+            result['passthrough_error'] = repr(error)
+            event('passthrough_unavailable', detail=repr(error))
+
     request = gpiod.request_lines('/dev/gpiochip3', consumer='a081-xr-camera-rig', config={
         144: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE),
         15: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.ACTIVE)})
@@ -548,6 +564,14 @@ try:
         controller = subprocess.Popen(['bash', str(args.controller_runner), str(base),
             str(args.controller_helper)], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         event('controller_input_started')
+    if passthrough_graph:
+        try:
+            passthrough_graph.configure()
+            result['passthrough'] = passthrough_graph.slots
+        except Exception as error:
+            # A preview failure must not prevent the accepted tracking startup.
+            result['passthrough_error'] = repr(error)
+            event('passthrough_configuration_failed', detail=repr(error))
     env = dict(os.environ, A081_QVR_CAMERA_NODES=','.join(s['video'] for s in slots),
                A081_QVR_OUTPUT_DIR=str(out / 'frames'), A081_QVR_CAMERA_STOP_FD=str(stop_read))
     if args.gate_seconds == 0:
@@ -564,6 +588,15 @@ try:
         env.update(A081_CONTROLLER_PATTERN_CSID_NODES=','.join(s['csid_subdev'] for s in slots),
                    A081_CONTROLLER_PATTERN_PHASE2_LINES=str(pattern_phase2_lines),
                    A081_CONTROLLER_PATTERN_PHASE2_GAIN=str(pattern_phase2_gain))
+    env.pop('A081_PASSTHROUGH_CAMERA_NODES', None)
+    if passthrough_graph and passthrough_graph.ready:
+        env['A081_PASSTHROUGH_CAMERA_NODES'] = ','.join(slot['video'] for slot in passthrough_graph.slots)
+        export_dir = Path('/run/qiyu-passthrough')
+        export_dir.mkdir(mode=0o750, exist_ok=True)
+        assert export_dir.is_dir() and not export_dir.is_symlink()
+        os.chown(export_dir, 0, int(os.environ.get('A081_PASSTHROUGH_READER_GID', '1000')))
+        export_dir.chmod(0o750)
+        env['A081_PASSTHROUGH_EXPORT_DIRECTORY'] = str(export_dir)
     log = (out / 'capture.log').open('w')
     handles.append(log)
     command = [str(executable), '--camera-capture']
@@ -727,6 +760,8 @@ finally:
                 assert all(not chip.get_line_info(line).used and chip.get_line_info(line).direction == Direction.INPUT
                            for line in (15, 144))
         cleanup_step('gpio_input_restore', restore_gpio_inputs)
+    if passthrough_graph:
+        cleanup_step('passthrough_controls_restore', passthrough_graph.restore)
     cleanup_step('media_links_reset', lambda: run(['media-ctl', '-r']))
     cleanup_step('dmesg_after', lambda: record('dmesg-after.txt', ['dmesg']))
     cleanup_step('graph_after', lambda: record('graph-after.txt', ['media-ctl', '-p']))

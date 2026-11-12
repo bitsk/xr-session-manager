@@ -14,21 +14,41 @@ import signal
 import stat
 import subprocess
 import time
+from trusted_paths import trusted_opt_path
 
 NORDIC_RESET = Path('/sys/bus/spi/devices/spi3.0/reset_asserted')
 
 
 def trusted_file(path):
-    path = Path(path)
-    if not path.is_absolute() or not path.is_relative_to('/opt'):
-        raise ValueError('Controller program/plan must be in private /opt')
-    for item in (path, *path.parents):
-        if item == Path('/'):
-            break
-        info = item.lstat()
-        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
-            raise ValueError('Untrusted controller path: ' + str(item))
-    return path
+    return trusted_opt_path(path)
+
+
+def prepare_sdk_mountpoints(plan):
+    """Restore empty SDK mount directories omitted by file-only collectors."""
+    argv = plan['producer_argv']
+    if Path(argv[0]).name != 'run-sdk-worker.sh':
+        return []
+    if argv.count('--root') != 1 or argv.index('--root') + 1 >= len(argv):
+        raise ValueError('SDK launcher needs one explicit trusted root directory')
+    root = trusted_opt_path(argv[argv.index('--root') + 1])
+    if not root.is_dir():
+        raise ValueError('SDK root must be an existing private directory')
+    result = []
+    for name, mode in (('proc', 0o755), ('dev', 0o755), ('tmp', 0o1777)):
+        path = root / name
+        created = not os.path.lexists(path)
+        if created:
+            path.mkdir(mode=0o755)
+        info = path.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or
+                (info.st_mode & 0o022 and not (name == 'tmp' and stat.S_IMODE(info.st_mode) == 0o1777))):
+            raise ValueError('Untrusted SDK mount directory: ' + str(path))
+        path.chmod(mode)
+        info = path.lstat()
+        if info.st_uid != 0 or stat.S_IMODE(info.st_mode) != mode or not stat.S_ISDIR(info.st_mode):
+            raise RuntimeError('SDK mount directory readback failed: ' + str(path))
+        result.append({'path': str(path), 'created': created, 'mode': oct(mode)})
+    return result
 
 
 def shared_cdsp_after(directory):
@@ -157,6 +177,7 @@ class ControllerSession:
         self.plan, digest = read_plan(self.data['controller_plan'])
         if digest != self.data['controller_plan_sha256']:
             raise ValueError('Controller plan changed after session creation')
+        self.result['sdk_mountpoints'] = prepare_sdk_mountpoints(self.plan)
         # The camera owner releases reset only after camera-active/HWGP1 are
         # high. Radio may open its transport now and wait for the real DRDY.
         if NORDIC_RESET.read_text().strip() != '1':

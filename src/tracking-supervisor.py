@@ -13,6 +13,8 @@ from controller_session import ControllerSession
 assert os.geteuid() == 0
 data = current()
 raw = Path(data['raw'])
+(raw / 'supervisor-started.json').write_text(json.dumps({
+    'trial': data['trial'], 'pid': os.getpid(), 'started_monotonic_ns': time.monotonic_ns()}) + '\n')
 tracking = PREFIX / 'tracking'
 stopping = False
 processes, logs = {}, []

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Bounded root-to-steamos relay of unchanged real 168-byte QVR packets."""
+"""Bounded root-to-graphics relay of unchanged real 240-byte QVR packets."""
 import argparse
 import json
 import os
@@ -11,6 +11,7 @@ import socket
 import stat
 import struct
 import time
+from common import USER, UID, GID, ROOTFS
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source', required=True, type=Path)
@@ -18,11 +19,11 @@ p.add_argument('--output', required=True, type=Path)
 p.add_argument('--seconds', type=int, default=110)
 a = p.parse_args()
 assert os.geteuid() == 0 and os.uname().machine == 'aarch64'
-assert Path('/etc/a081-rootfs-id').read_text().strip() == 'a081-steamos-arm64'
+assert Path('/etc/a081-rootfs-id').read_text().strip() == ROOTFS
 assert b'A081' in Path('/proc/device-tree/model').read_bytes()
 assert 0 <= a.seconds <= 450
-account = pwd.getpwnam('steamos')
-assert account.pw_uid == 1000
+account = pwd.getpwnam(USER)
+assert (account.pw_uid, account.pw_gid) == (UID, GID)
 assert a.source.is_absolute() and a.output.is_absolute()
 assert len(str(a.source)) < 108 and len(str(a.output)) < 108
 assert a.output.parent.parent == Path('/run') and a.output.parent.name.startswith('a081-qvr-pose-')
@@ -53,7 +54,7 @@ try:
     os.chmod(a.output, 0o660)
     listener.listen(4)
     print(json.dumps({'relay': 'ready', 'output': str(a.output), 'client_uid': account.pw_uid,
-                      'unchanged_wire_bytes': 168, 'seconds': a.seconds}), flush=True)
+                      'unchanged_wire_bytes': 240, 'seconds': a.seconds}), flush=True)
     while running and (a.seconds == 0 or time.monotonic() < deadline):
         if source is None:
             if not a.source.exists():
@@ -83,20 +84,20 @@ try:
             continue
         for _ in range(256):
             try:
-                packet, _, flags, _ = source.recvmsg(168)
+                packet, _, flags, _ = source.recvmsg(240)
             except BlockingIOError:
                 break
             if not packet:
                 running = False
                 break
-            assert len(packet) == 168 and not flags & socket.MSG_TRUNC
-            assert struct.unpack_from('<3I', packet) == (0x54523841, 1, 168)
+            assert len(packet) == 240 and not flags & socket.MSG_TRUNC
+            assert struct.unpack_from('<3I', packet) == (0x54523841, 2, 240)
             received += 1
             # A blocked reader is disconnected; never queue old poses or change
             # a timestamp/quality field to make a packet look fresh or valid.
             for peer in peers[:]:
                 try:
-                    if peer.send(packet, socket.MSG_DONTWAIT | socket.MSG_NOSIGNAL) != 168:
+                    if peer.send(packet, socket.MSG_DONTWAIT | socket.MSG_NOSIGNAL) != 240:
                         raise OSError('partial seqpacket')
                     delivered += 1
                 except OSError:

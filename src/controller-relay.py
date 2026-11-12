@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Root relay of unchanged real SDK controller packets to steamos UID 1000.
+"""Root relay of unchanged real SDK controller packets to the graphics user.
 
-Input is a pipe carrying the 96-byte a081_controller_pose_packet, never JSON
+Input is a pipe carrying the 96-byte a081_controller_pose_packet (v1 or v2), never JSON
 or a replay file. No timestamps, coordinate profiles or validity flags are
 created here. Closing the source closes subscribers and invalidates poses.
 """
@@ -17,6 +17,7 @@ import stat
 import struct
 import sys
 import time
+from common import USER, UID, GID, ROOTFS
 
 WIRE = struct.Struct('<4I4Q2IfI7fI')
 assert WIRE.size == 96
@@ -31,14 +32,14 @@ def main():
     directory = args.directory
     if os.geteuid() != 0 or not 0 <= args.seconds <= 3600:
         parser.error('Run as root; duration 0 (continuous) through 3600')
-    if (Path('/etc/a081-rootfs-id').read_text().strip() != 'a081-steamos-arm64' or
-        Path('/proc/device-tree/model').read_bytes().rstrip(b'\0') != b'iQIYI XR MIX (A081)'):
-        parser.error('Expected A081 SteamOS')
+    if (Path('/etc/a081-rootfs-id').read_text().strip() != ROOTFS or
+        Path('/proc/device-tree/model').read_bytes().rstrip(b'\0') != b'iQIYI Qiyu MIX (A081)'):
+        parser.error('Expected the selected A081 rootfs')
     if directory.parent != Path('/run') or not re.fullmatch(r'a081-controller-pose-[A-Za-z0-9_-]+', directory.name):
         parser.error('Select a new /run/a081-controller-pose-TOKEN directory')
-    account = pwd.getpwnam('steamos')
-    if account.pw_uid != 1000 or not stat.S_ISFIFO(os.fstat(args.input_fd).st_mode):
-        parser.error('Expected steamos UID1000 and a live producer pipe; files are not input')
+    account = pwd.getpwnam(USER)
+    if (account.pw_uid, account.pw_gid) != (UID, GID) or not stat.S_ISFIFO(os.fstat(args.input_fd).st_mode):
+        parser.error('Expected the selected graphics account and a live producer pipe; files are not input')
     directory.mkdir(mode=0o755)
     path = directory / 'tracking.sock'
     server = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC)
@@ -83,9 +84,11 @@ def main():
                     while len(pending) >= WIRE.size:
                         packet = bytes(pending[:WIRE.size]); del pending[:WIRE.size]
                         values = WIRE.unpack(packet)
-                        if (values[:3] != (0x43503841, 1, 96) or values[3] & ~63 or
-                            not values[4] or not values[5] or values[8] > 1 or
-                            values[9] > 1 or values[11] or values[-1]):
+                        v2 = values[1] == 2
+                        if (values[0] != 0x43503841 or values[1] not in (1, 2) or values[2] != 96 or
+                            values[3] & ~(127 if v2 else 63) or
+                            not values[4] or not values[5] or values[8] > 1 or values[9] > 1 or
+                            values[11] & (0xe0f0000f if v2 else ~0) or values[-1] & (0xffff0000 if v2 else ~0)):
                             raise ValueError('producer packet contract mismatch')
                         if record: record.write(packet)
                         packets += 1
