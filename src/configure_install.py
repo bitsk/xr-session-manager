@@ -36,7 +36,12 @@ def main():
     profile = json.loads(args.profile.read_text())
     def remap(value):
         if isinstance(value, str):
-            return value.replace('/opt/mix-native-interop', '/usr/lib/aarch64-linux-gnu/xr/native-interop')
+            value = value.replace('/opt/mix-native-interop/share/vulkan/icd.d/native-freedreno.json',
+                                  '/usr/lib/aarch64-linux-gnu/xr-mesa/icd.d/freedreno_icd.aarch64.json')
+            value = value.replace('/opt/mix-steamvr-turnip/share/vulkan/icd.d/freedreno_icd.aarch64.json',
+                                  '/usr/lib/aarch64-linux-gnu/xr-mesa/icd.d/freedreno_icd.aarch64.json')
+            return value.replace('/opt/mix-native-interop', '/usr/lib/aarch64-linux-gnu/xr/native-interop').replace(
+                '/opt/mix-steamvr-turnip/lib', '/usr/lib/aarch64-linux-gnu/xr-mesa')
         if isinstance(value, list):return [remap(v) for v in value]
         if isinstance(value, dict):return {k:remap(v) for k,v in value.items()}
         return value

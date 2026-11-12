@@ -1,3 +1,9 @@
+xr-session-manager (0.1.5) unstable; urgency=medium
+
+  * Use installed private Mesa ICD and a single CDSP runner implementation.
+
+ -- bits <bigbits@hackx.cc>  Thu, 12 Nov 2026 20:14:46 +0800
+
 xr-session-manager (0.1.4) unstable; urgency=medium
 
   * Run lifecycle scripts from installed packages and prepare explicit private asset capsules.
