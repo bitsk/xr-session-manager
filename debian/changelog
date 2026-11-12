@@ -1,3 +1,9 @@
+xr-session-manager (0.1.6) unstable; urgency=medium
+
+  * Rebuild capsule program bindings and nested checksums from installed packages.
+
+ -- bits <bigbits@hackx.cc>  Thu, 12 Nov 2026 20:22:31 +0800
+
 xr-session-manager (0.1.5) unstable; urgency=medium
 
   * Use installed private Mesa ICD and a single CDSP runner implementation.

@@ -52,16 +52,31 @@ def main():
         parser.error('Choose new profile and capsule paths; existing deployments remain intact')
     if not str(args.capsule).startswith('/opt/'):
         parser.error('The private asset capsule must remain below /opt')
-    original = inside(profile['prefix'])
+    original_prefix = profile['prefix']
+    original = inside(original_prefix)
     manifest = json.loads((original / 'manifest.json').read_text())
+    for relative, expected in manifest['files'].items():
+        if Path(relative).is_absolute() or '..' in Path(relative).parts:
+            raise ValueError('Invalid imported asset path')
+        if sha(original / relative) != expected:
+            raise ValueError('Imported asset checksum changed: ' + relative)
+    def relocate(value):
+        if isinstance(value, str):
+            return value.replace(original_prefix + '/', str(args.capsule) + '/')
+        if isinstance(value, list): return [relocate(v) for v in value]
+        if isinstance(value, dict): return {k:relocate(v) for k,v in value.items()}
+        return value
+    original_plan = profile.get('controller_plan')
+    profile = relocate(profile)
+    for key in ('_path', '_sha256'): profile.pop(key, None)
     # Runtime data and external libraries can be imported by digest. Executable
     # project scripts always come from the installed session package.
     forbidden = {'.py', '.pyc', '.sh', '.c', '.cc', '.cpp', '.h', '.hpp', '.patch'}
     capsule.mkdir(parents=True)
     for source in original.rglob('*'):
         relative = source.relative_to(original)
-        if ('runs' in relative.parts or '__pycache__' in relative.parts or
-                source.suffix in forbidden or relative.name in ['manifest.json', 'SHA256SUMS']):
+        if (relative.parts[0] == 'monado' or 'runs' in relative.parts or '__pycache__' in relative.parts or
+                source.suffix in forbidden or str(relative) in ['manifest.json', 'SHA256SUMS']):
             continue
         if source.is_file() and not source.is_symlink():
             target = capsule / relative
@@ -73,6 +88,13 @@ def main():
         'tracking/liba081-qvr-client-live-stream.so': library / 'head-tracking/liba081-qvr-client-live-stream.so',
         'tracking/a081-tracking-observe': Path('/usr/bin/xr-head-observe'),
         'tracking/hexagonrpcd-a081': Path('/usr/bin/xr-hexagonrpcd'),
+        'controller-sdk-pose': library / 'controller/controller-sdk-pose',
+        'controller-radio': Path('/usr/bin/xr-controller-radio'),
+        'controller-observe': Path('/usr/bin/xr-controller-observe'),
+        'liba081-sdk-log.so': library / 'controller/liba081-sdk-log.so',
+        'controller-dsp/libcdsprpc.so': library / 'controller/libcdsprpc.so',
+        'controller-dsp/libcdsprpc_system.so': library / 'controller/libcdsprpc_system.so',
+        'controller-dsp/liba081-snpe-runtime.so': library / 'controller/liba081-snpe-runtime.so',
     }
     imported = {}
     for relative, installed in required.items():
@@ -102,7 +124,7 @@ def main():
                 argv.extend(['--prefix', '/usr'])
     plan_name = profile.get('controller_plan')
     if plan_name:
-        plan = json.loads(inside(plan_name).read_text())
+        plan = relocate(json.loads(inside(original_plan).read_text()))
         argv = plan['producer_argv']
         launcher = Path('/usr/lib/xr/session-manager/run-sdk-worker.sh')
         argv[0] = str(launcher)
@@ -126,6 +148,11 @@ def main():
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(plan, indent=2) + '\n')
         profile['controller_plan'] = '/' + str(destination.relative_to(root))
+    dsp = capsule / 'controller-dsp'
+    dsp_sums = {str(p.relative_to(dsp)): sha(p) for p in dsp.rglob('*')
+                if p.is_file() and p.name not in ('SHA256SUMS', 'manifest.json')}
+    (dsp / 'SHA256SUMS').write_text(''.join(value + '  ' + name + '\n'
+                                         for name,value in sorted(dsp_sums.items())))
     manifest['installed_components'] = imported
     manifest['files'] = {str(p.relative_to(capsule)): sha(p) for p in capsule.rglob('*') if p.is_file()}
     (capsule / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')

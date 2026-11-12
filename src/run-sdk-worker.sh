@@ -63,9 +63,9 @@ if [[ -n $cdsp_runtime ]]; then
     (cd "$cdsp_components" && sha256sum --quiet -c SHA256SUMS)
 fi
 if [[ -n $snapshot_dir ]]; then
-    [[ $snapshot_dir == /opt/mix-vr-shell-controller/tracking/runs/*/controller-sdk-frames ]]
+    [[ $snapshot_dir == "${worker%/*}/tracking/runs/"*/controller-sdk-frames ]]
     sdk_log_shim=${worker%/*}/liba081-sdk-log.so
-    [[ $(sha256sum "$sdk_log_shim" | cut -d ' ' -f1) == a4fdc4ceb3b3f7ac5ffaa2ae618196e4d0ea018367ab6462acbdc7aa7ef53297 ]]
+    (cd "${worker%/*}" && sha256sum --quiet -c SHA256SUMS)
     mkdir -m 700 -- "$snapshot_dir"
 fi
 unset LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
