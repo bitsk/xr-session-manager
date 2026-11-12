@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""Grant/revoke only the IIO access used by the existing A081 SteamVR driver.
+
+Run prepare/restore as root on a supported native A081 installation, with VR stopped. This does
+not change sampling or start services during prepare/restore. The recover action
+restores journaled attributes only after the global lock is free and every IIO
+reader has exited. A held global flock is required. Restore
+is tied to the same boot and device inodes; original permissions are retained
+in a root-only journal before any access permission is changed.
+"""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
+from a081_platform import identity as platform_identity
+
+
+LOCK = Path('/run/a081-iio.lock')
+# sysfs ownership and inode snapshots have meaning only within this boot.
+STATE = Path('/run/mix-steamvr-iio-access.json')
+SENSORS = {'qcom-see-accel': 'accel', 'qcom-see-gyro': 'anglvel'}
+UID = GID = 1000
+
+
+def fail(message):
+    raise RuntimeError(message)
+
+
+def identity():
+    platform_identity()
+    return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+
+
+def discover():
+    found = {}
+    for node in Path('/sys/bus/iio/devices').glob('iio:device[0-9]*'):
+        name = (node / 'name').read_text().strip()
+        if name not in SENSORS:
+            continue
+        if name in found:
+            fail('More than one IIO node has the required sensor name')
+        found[name] = node
+    if set(found) != set(SENSORS):
+        fail('Both qcom-see accel and gyro must already be present')
+    paths = [LOCK]
+    nodes = {}
+    for name, channel in SENSORS.items():
+        node = found[name]
+        nodes[name] = str(node)
+        device = Path('/dev') / node.name
+        if device.is_symlink() or not stat.S_ISCHR(device.stat().st_mode):
+            fail('Expected the real IIO character node: ' + str(device))
+        paths.append(device)
+        for index, stem in enumerate([f'in_{channel}_{axis}' for axis in 'xyz'] + ['in_timestamp']):
+            scan = node / 'scan_elements'
+            expected_type = 'le:s32/32>>0' if index < 3 else 'le:s64/64>>0'
+            if (scan / (stem + '_index')).read_text().strip() != str(index):
+                fail('Unexpected IIO scan index')
+            if (scan / (stem + '_type')).read_text().strip() != expected_type:
+                fail('Unexpected IIO scan type')
+            paths.append(scan / (stem + '_en'))
+        paths.extend(node / attr for attr in (
+            'current_timestamp_clock', 'buffer/enable', 'buffer/length', 'buffer/watermark'))
+        optional = node / 'buffer/hwfifo_timeout'
+        if optional.exists():
+            paths.append(optional)
+    # No blanket /sys or /dev grant, and no sampling-frequency grant: the
+    # existing a081_device.c does not modify sampling_frequency.
+    for path in paths[1:]:
+        if path.is_symlink() or not path.exists():
+            fail('Missing or symlinked IIO access target: ' + str(path))
+    return nodes, paths
+
+
+def idle(nodes):
+    for name, path in nodes.items():
+        node = Path(path)
+        if (node / 'name').read_text().strip() != name:
+            fail('IIO identity changed')
+        if (node / 'buffer/enable').read_text().strip() != '0':
+            fail('An IIO buffer is active; stop its owner before changing permissions')
+
+
+def metadata(path):
+    item = path.lstat()
+    if not (stat.S_ISREG(item.st_mode) or stat.S_ISCHR(item.st_mode)):
+        fail('Unsupported access target: ' + str(path))
+    result = {'path': str(path), 'realpath': str(path.resolve()),
+            'uid': item.st_uid, 'gid': item.st_gid, 'mode': stat.S_IMODE(item.st_mode),
+            'device': item.st_dev, 'inode': item.st_ino, 'rdev': item.st_rdev,
+            'type': stat.S_IFMT(item.st_mode)}
+    if str(path).startswith('/sys/'):
+        result['value'] = path.read_text().strip()
+    return result
+
+
+def recover_values(nodes, entries):
+    """Repair the observed SIGTERM case only after the driver has fully exited."""
+    targets = {'/dev/' + Path(path).name for path in nodes.values()}
+    holders = []
+    for fd in Path('/proc').glob('[0-9]*/fd/*'):
+        try:
+            if str(fd.readlink()) in targets:
+                holders.append(str(fd))
+        except OSError:
+            pass
+    if holders:
+        fail('IIO descriptors still held: ' + ', '.join(holders))
+    attributes = [e for e in entries if e['path'].startswith('/sys/')]
+    if not all('value' in e for e in attributes):
+        fail('This older journal has no attribute snapshot; no sensor writes issued')
+    for e in attributes:
+        same_object(e)
+    changed = sum(Path(e['path']).read_text().strip() != e['value'] for e in attributes)
+    for path in nodes.values():
+        enable = Path(path) / 'buffer/enable'
+        if enable.read_text().strip() != '0':
+            enable.write_text('0')
+    for e in attributes:
+        path = Path(e['path'])
+        if path.read_text().strip() != e['value']:
+            path.write_text(e['value'])
+        if path.read_text().strip() != e['value']:
+            fail('IIO attribute restore readback differs: ' + str(path))
+    return changed
+
+
+def same_object(entry):
+    current = metadata(Path(entry['path']))
+    for key in ('realpath', 'device', 'inode', 'rdev', 'type'):
+        if current[key] != entry[key]:
+            fail('Access target changed identity: ' + entry['path'])
+    return current
+
+
+def check_state_path():
+    for parent in STATE.parents:
+        if parent.is_symlink():
+            fail('Refusing a symlink ancestor of the permission journal')
+    if STATE.is_symlink():
+        fail('Refusing a symlink permission journal')
+    if STATE.exists():
+        info = STATE.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600:
+            fail('Permission journal must be a root-owned 0600 regular file')
+
+
+def write_state(data):
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix='.steamvr-iio-', dir=STATE.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            json.dump(data, stream, indent=2)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, STATE)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def validate_state(data, boot, nodes, paths):
+    if data.get('version') != 1 or data.get('boot_id') != boot:
+        fail('Permission journal belongs to another boot; no permissions changed')
+    if data.get('nodes') != nodes:
+        fail('IIO numbering or identity changed since prepare')
+    entries = data.get('entries', [])
+    if [entry.get('path') for entry in entries] != [str(path) for path in paths]:
+        fail('Journal paths differ from the exact driver access list')
+    for entry in entries:
+        same_object(entry)
+    return entries
+
+
+def change(entry, restore=False):
+    same_object(entry)
+    path = entry['path']
+    owner, group, mode = ((entry['uid'], entry['gid'], entry['mode']) if restore
+                          else (UID, GID, entry['mode'] | stat.S_IRUSR | stat.S_IWUSR))
+    try:
+        os.chown(path, owner, group, follow_symlinks=False)
+        os.chmod(path, mode, follow_symlinks=False)
+    except OSError as error:
+        fail(f'Permission change unavailable at {path}: errno={error.errno}; '
+             'the kernel/sysfs mount did not accept chown/chmod')
+    current = same_object(entry)
+    if (current['uid'], current['gid'], current['mode']) != (owner, group, mode):
+        fail('Permission readback mismatch: ' + path)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('prepare', 'restore', 'recover'))
+    args = parser.parse_args()
+    boot = identity()
+    nodes, paths = discover()
+    if args.action != 'recover':
+        idle(nodes)
+    check_state_path()
+    previous = json.loads(STATE.read_text()) if STATE.exists() else None
+    if args.action in ('restore', 'recover') and previous is None:
+        print(json.dumps({'action': args.action, 'status': 'nothing_to_restore'}))
+        return
+    if previous is not None:
+        validate_state(previous, boot, nodes, paths)
+    existed = LOCK.exists() or LOCK.is_symlink()
+    if LOCK.is_symlink() or (existed and not stat.S_ISREG(LOCK.stat().st_mode)):
+        fail('Global IIO lock must be a regular file')
+    flags = os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW
+    if args.action == 'prepare' and previous is None and not existed:
+        try:
+            descriptor = os.open(LOCK, flags | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            existed = True
+            descriptor = os.open(LOCK, flags)
+    else:
+        descriptor = os.open(LOCK, flags)
+    journal_written = previous is not None
+    acquired = False
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except BlockingIOError:
+            fail('Another process owns /run/a081-iio.lock')
+        if args.action != 'recover':
+            idle(nodes)
+        # Recheck after acquiring the lock, including its exact inode.
+        if previous is not None:
+            entries = validate_state(previous, boot, nodes, paths)
+        else:
+            entries = [metadata(path) for path in paths]
+        if args.action == 'prepare':
+            if previous is not None:
+                if previous.get('status') != 'prepared':
+                    fail('An incomplete grant exists; run restore before prepare')
+                for entry in entries:
+                    current = same_object(entry)
+                    wanted = (UID, GID, entry['mode'] | stat.S_IRUSR | stat.S_IWUSR)
+                    if (current['uid'], current['gid'], current['mode']) != wanted:
+                        fail('Granted permissions changed; restore before preparing again')
+                print(json.dumps({'action': 'prepare', 'status': 'already_prepared', 'nodes': nodes}))
+                return
+            data = {'version': 1, 'boot_id': boot, 'status': 'preparing',
+                    'nodes': nodes, 'lock_existed': existed, 'entries': entries}
+            write_state(data)
+            journal_written = True
+            try:
+                for entry in entries:
+                    change(entry)
+            except RuntimeError:
+                # Keep the journal even if rollback succeeds so restore can
+                # verify every saved attribute and remove only our created lock.
+                rollback_errors = []
+                for entry in reversed(entries):
+                    try:
+                        change(entry, restore=True)
+                    except (OSError, RuntimeError) as error:
+                        rollback_errors.append(str(error))
+                data['status'] = 'prepare_failed'
+                data['rollback_errors'] = rollback_errors
+                write_state(data)
+                raise
+            data['status'] = 'prepared'
+            write_state(data)
+            print(json.dumps({'action': 'prepare', 'status': 'prepared', 'nodes': nodes,
+                              'permission_targets': len(entries), 'journal': str(STATE),
+                              'sensor_configuration_changed': False}))
+        else:
+            restored_values = 0
+            if args.action == 'recover':
+                restored_values = recover_values(nodes, entries)
+                idle(nodes)
+            for entry in reversed(entries):
+                change(entry, restore=True)
+            idle(nodes)
+            if not previous['lock_existed']:
+                same_object(entries[0])
+                LOCK.unlink()
+            STATE.unlink()
+            print(json.dumps({'action': args.action, 'status': 'restored',
+                              'permission_targets': len(entries), 'restored_attributes': restored_values,
+                              'sensor_configuration_changed': bool(restored_values)}))
+    finally:
+        if acquired and not existed and not journal_written:
+            # A failed preflight must not leave an unrecorded lock behind.
+            try:
+                current = LOCK.stat()
+                opened = os.fstat(descriptor)
+                if (current.st_dev, current.st_ino) == (opened.st_dev, opened.st_ino):
+                    LOCK.unlink()
+            except FileNotFoundError:
+                pass
+        os.close(descriptor)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, RuntimeError, ValueError, KeyError) as error:
+        print('SteamVR IIO access failed: ' + str(error), file=sys.stderr)
+        sys.exit(1)

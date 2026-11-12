@@ -47,7 +47,7 @@ def main():
     unit = 'qiyu-' + profile['id'] + '-boot.service'
     unit_file = inside(root, '/etc/systemd/system/' + unit)
     state_file = inside(root, '/var/lib/qiyu-vr-session/' + profile['id'] + '-boot.json')
-    program = Path(profile['prefix']) / 'session.py'
+    program = Path('/usr/lib/xr/session-manager/session.py')
     if not inside(root, program).is_file():
         raise RuntimeError('Install the complete session package before boot selection')
     if unit_file.exists() and not unit_file.read_text().startswith(HEADER):

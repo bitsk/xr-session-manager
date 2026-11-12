@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import traceback
+from common import PROGRAMS, PROFILE
 from common import current, environment, PREFIX, UID, SESSION_HOME, STEAMVR, SYSTEM_ICD, SCENE
 from scene_return import SceneReturn
 
@@ -54,7 +55,7 @@ def report_exception(kind, value, tb):
         while True:
             time.sleep(1)
     try:
-        result = subprocess.run(['python3', str(PREFIX / 'launch.py'), 'shutdown'], timeout=22)
+        result = subprocess.run(['python3', str(PROGRAMS / 'launch.py'), 'shutdown'], timeout=22)
         (state / 'failure-shutdown.json').write_text(json.dumps({'exit': result.returncode}) + '\n')
     except Exception as error:
         (state / 'failure-shutdown.json').write_text(json.dumps({'error': str(error)}) + '\n')
@@ -97,7 +98,7 @@ def spawn(name, args, child_env=vr_env, cwd=runtime):
         log.close()
         logs.remove(log)
         (state / 'logs' / (name + '-stdout.log')).unlink()
-        args = ['python3', str(PREFIX / 'bounded_run.py'), '--log',
+        args = ['python3', str(PROGRAMS / 'bounded_run.py'), '--log',
                 str(state / 'logs' / (name + '-stdout.log')), '--', *args]
         process = subprocess.Popen(args, cwd=cwd, env=child_env)
     else:
@@ -131,7 +132,7 @@ while time.monotonic() < deadline:
     time.sleep(0.1)
 else:
     raise RuntimeError('Native server IPC readiness timed out')
-start('pose-watch', [str(PREFIX / 'pose-watch'), str(runtime / 'libopenvr_api.so'), data['producer_done'],
+start('pose-watch', [str(Path(PROFILE.get('pose_watch', str(PREFIX / 'pose-watch')))), str(runtime / 'libopenvr_api.so'), data['producer_done'],
                      'continuous' if data['seconds'] == 0 else 'bounded'])
 activation = start('activation', [str(runtime / 'vrcmd'), '--background', '--waitforquit'])
 # The native VR Dashboard directly hosts vrwebhelper. The optional desktop
@@ -171,7 +172,7 @@ else:
     scene = start('scene', SCENE['argv'], scene_env,
                   Path(SCENE.get('working_directory', str(SESSION_HOME))))
 (state / 'children.json').write_text(json.dumps({name: p.pid for name, p in children.items()}, indent=2) + '\n')
-start('present-offset', ['python3', str(PREFIX / 'present-offset.py')])
+start('present-offset', ['python3', str(PROGRAMS / 'present-offset.py')])
 print(json.dumps({'phase': 'native_ui_started', 'trial': data['trial'],
                   'tracking': 'qvr-pose', 'ui_accepted': False}), flush=True)
 show_deadline = time.monotonic() + 45

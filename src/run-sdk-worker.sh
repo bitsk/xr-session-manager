@@ -20,7 +20,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ $(id -u) == 0 && $(uname -m) == aarch64 ]]
-[[ $(cat /etc/a081-rootfs-id) == a081-steamos-arm64 ]]
+session_modules=$(dirname -- "$(readlink -e -- "${BASH_SOURCE[0]}")")
+session_rootfs=$(python3 - "$session_modules" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from common import ROOTFS
+print(ROOTFS)
+PY
+)
+[[ $(cat /etc/a081-rootfs-id) == "$session_rootfs" ]]
+resolve_private_opt() {
+    python3 - "$session_modules" "$1" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from trusted_paths import trusted_opt_path
+print(trusted_opt_path(sys.argv[2]).resolve(strict=True))
+PY
+}
+private_opt=$(resolve_private_opt /opt)
 grep -q A081 /proc/device-tree/model
 [[ $sdk_root == /opt/* && $worker == /opt/* ]]
 [[ $worker_sha =~ ^[0-9a-f]{64}$ && $packet_fd =~ ^[0-9]+$ && $packet_fd -ge 3 ]]
@@ -28,9 +45,9 @@ grep -q A081 /proc/device-tree/model
 [[ -z $candidate_profile || $candidate_profile == sdk-world-to-portrait-v1 ]]
 [[ -z $snpe_runtime || ( $snpe_runtime == dsp && -n $cdsp_runtime ) ]]
 [[ $input_socket =~ ^/run/a081-controller-input-[a-zA-Z0-9_-]+/input.sock$ ]]
-sdk_root=$(readlink -e "$sdk_root")
-worker=$(readlink -e "$worker")
-[[ $sdk_root == /opt/* && $worker == /opt/* ]]
+sdk_root=$(resolve_private_opt "$sdk_root")
+worker=$(resolve_private_opt "$worker")
+[[ $sdk_root == "$private_opt/"* && $worker == "$private_opt/"* ]]
 input_directory=${input_socket%/*}
 [[ -d $sdk_root && -f $sdk_root/manifest.json && -f $sdk_root/SHA256SUMS && -x $worker ]]
 [[ -d $input_directory && ! -e $input_socket && ! -L $input_directory ]]
@@ -38,9 +55,9 @@ input_directory=${input_socket%/*}
 [[ $(sha256sum "$worker" | cut -d ' ' -f1) == "$worker_sha" ]]
 (cd "$sdk_root" && sha256sum --quiet -c SHA256SUMS)
 if [[ -n $cdsp_runtime ]]; then
-    cdsp_runtime=$(readlink -e "$cdsp_runtime")
+    cdsp_runtime=$(resolve_private_opt "$cdsp_runtime")
     cdsp_components=${worker%/*}/controller-dsp
-    [[ $cdsp_runtime == /opt/* && -c /dev/fastrpc-cdsp ]]
+    [[ $cdsp_runtime == "$private_opt/"* && -c /dev/fastrpc-cdsp ]]
     [[ -f $cdsp_runtime/dsp/cdsp/fastrpc_shell_3 && -d $cdsp_components ]]
     (cd "$cdsp_runtime" && sha256sum --quiet -c SHA256SUMS)
     (cd "$cdsp_components" && sha256sum --quiet -c SHA256SUMS)

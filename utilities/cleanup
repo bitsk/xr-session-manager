@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Record the first SteamVR exit before recovery and restore the previous desktop."""
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+
+def snapshot(trial, phase):
+    assert re.fullmatch(r'[a-zA-Z0-9_-]+', trial)
+    assert phase in ('first-exit', 'desktop-first-exit')
+    out = Path('/var/lib/mix-steamos/steamvr-evidence') / trial / phase
+    out.mkdir(parents=True, mode=0o700, exist_ok=False)
+    for name in ('dma_buf/bufinfo', 'dri/0/clients', 'dri/0/gem',
+                 'dri/1/clients', 'dri/1/state', 'dri/1/fb', 'dri/1/gem', 'dri/1/mm'):
+        try:
+            value = (Path('/sys/kernel/debug') / name).read_text()
+        except OSError as error:
+            value = str(error)
+        (out / (name.replace('/', '_') + '.txt')).write_text(value)
+    for filename, args in (
+        ('dmesg.txt', ['dmesg', '--color=never']),
+        ('processes.txt', ['ps', '-eo', 'pid,ppid,uid,comm']),
+    ):
+        result = subprocess.run(args, capture_output=True, text=True)
+        (out / filename).write_text(result.stdout + result.stderr)
+    holders = []
+    for proc in Path('/proc').glob('[0-9]*'):
+        selected = {}
+        for fd in (proc / 'fd').glob('*'):
+            try:
+                target = str(fd.readlink())
+                if not (target.startswith(('/dev/dri/', '/dev/iio:', '/run/a081-iio.lock'))
+                        or 'dmabuf' in target or 'sync_file' in target or 'drm-syncobj' in target):
+                    continue
+                selected[fd.name] = {'target': target, 'fdinfo': (proc / 'fdinfo' / fd.name).read_text()}
+            except OSError:
+                continue
+        if selected:
+            try:
+                holders.append({'pid': int(proc.name), 'comm': (proc / 'comm').read_text().strip(),
+                                'cgroup': (proc / 'cgroup').read_text(), 'fds': selected})
+            except OSError:
+                holders.append({'pid': int(proc.name), 'exited_during_snapshot': True, 'fds': selected})
+    (out / 'fd-owners.json').write_text(json.dumps(holders, indent=2) + '\n')
+    (out / 'time.json').write_text(json.dumps({
+        'monotonic_ns': time.monotonic_ns(), 'time_ns': time.time_ns(),
+        'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+        'phase': phase,
+    }, indent=2) + '\n')
+    return out
+
+
+def main():
+    from a081_platform import identity as platform_identity
+    platform = platform_identity()
+    trial = os.environ['MIX_STEAMVR_TRIAL']
+    error = None
+    try:
+        print('First-exit evidence:', snapshot(trial, 'first-exit'), flush=True)
+    except Exception as e:
+        error = e
+        print('First-exit collection failed:', e, file=sys.stderr, flush=True)
+    recovered = subprocess.run(['python3', str(Path(platform['utilities']) / 'iio-access'), 'recover'])
+    if os.environ.get('MIX_STEAMVR_RESTORE_DESKTOP') == '1':
+        subprocess.run(['systemctl', 'start', platform['desktop_unit']], check=True)
+    if error or recovered.returncode:
+        raise RuntimeError('SteamVR cleanup needs inspection; retained first-exit evidence')
+
+
+if __name__ == '__main__':
+    main()

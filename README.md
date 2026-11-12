@@ -3,7 +3,7 @@
 实际控制器/头显会话的启动停止、数据转发与清理。
 
 
-构建入口和依赖见下方；工程 Wiki/Blog 与跨仓库规划集中在 [openkylin-xr-docs](https://gitee.com/bigbits/openkylin-xr-docs)。
+构建入口和依赖见下方；工程 Wiki/Blog 与跨仓库规划集中在 [openkylin-xr-docs](https://github.com/bitsk/openkylin-xr-docs)。
 
 ## 打包
 

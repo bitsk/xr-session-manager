@@ -18,6 +18,7 @@ import pwd
 from controller_session import read_plan
 from desktop_owner import stop_desktop, restore_desktop
 from sensor_consumers import pause as pause_sensor_consumers, restore as restore_sensor_consumers
+from common import PROGRAMS
 from common import (CURRENT, DESKTOP, PREFIX, UNIT, VIEWER, TRACKING_UNIT, current, selected_driver,
                     selected_gamescope, PROFILE, USER, UID, GID, SESSION_HOME, ROOTFS, STEAMVR,
                     UTILITIES, KMS_ICD, SCENE, RUNTIME_LIBRARY_PATH)
@@ -210,7 +211,7 @@ def shutdown():
                 and json.loads(retention.read_text()).get('exit') in (0, 8)):
             break
         time.sleep(0.1)
-    run('runuser', '-u', USER, '--', 'python3', str(PREFIX / 'launch.py'), 'shutdown')
+    run('runuser', '-u', USER, '--', 'python3', str(PROGRAMS / 'launch.py'), 'shutdown')
 
 
 def start(seconds, gain, driver_directory=None, driver_sha256=None, controller_plan=None, controller_pose_socket=None, head_public_socket=None):
@@ -224,7 +225,7 @@ def start(seconds, gain, driver_directory=None, driver_sha256=None, controller_p
     run('sha256sum', '--quiet', '-c', 'SHA256SUMS', cwd=PREFIX)
     if PROFILE.get('tracking_recovery_display_guard'):
         guard = json.loads((PREFIX / 'manifest.json').read_text()).get('tracking_display_guard', {})
-        observer_sha = hashlib.sha256((PREFIX / 'pose-watch').read_bytes()).hexdigest()
+        observer_sha = hashlib.sha256(Path(PROFILE.get('pose_watch', str(PREFIX / 'pose-watch'))).read_bytes()).hexdigest()
         if guard.get('schema') != 1 or guard.get('pose_watch_sha256') != observer_sha:
             raise RuntimeError('Tracking recovery requires the matching supervised display guard')
     for process in ('vrserver', 'vrcompositor', 'gamescope'):
@@ -372,9 +373,9 @@ Environment=XDG_SESSION_CLASS=user
 Environment=XDG_SEAT=seat0
 Environment=XDG_VTNR=7
 ExecStartPre=+/usr/bin/chvt 7
-ExecStart=/usr/bin/python3 {PREFIX}/launch.py start
-ExecStop=+/usr/bin/python3 {PREFIX}/session.py shutdown
-ExecStopPost=+/usr/bin/python3 {PREFIX}/session.py cleanup --trial {trial}
+ExecStart=/usr/bin/python3 {PROGRAMS}/launch.py start
+ExecStop=+/usr/bin/python3 {PROGRAMS}/session.py shutdown
+ExecStopPost=+/usr/bin/python3 {PROGRAMS}/session.py cleanup --trial {trial}
 StandardInput=tty
 TTYPath=/dev/tty7
 # Stop commands must not hang up the still-running VR session before native
@@ -402,7 +403,7 @@ Description=Real MIX QVR camera IMU producer and restricted relay
 Type=simple
 WorkingDirectory={PREFIX}
 Environment=QIYU_VR_SESSION_PROFILE={PROFILE.get('_path', '')}
-ExecStart=/usr/bin/python3 {PREFIX}/tracking-supervisor.py
+ExecStart=/usr/bin/python3 {PROGRAMS}/tracking-supervisor.py
 KillMode=mixed
 TimeoutStopSec=95
 RuntimeMaxSec={seconds + 130 if seconds else 'infinity'}

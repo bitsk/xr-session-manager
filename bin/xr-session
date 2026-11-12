@@ -1,4 +1,8 @@
 #!/bin/sh
+if [ "$1" = configure ]; then
+    shift
+    exec python3 /usr/lib/xr/session-manager/configure_install.py "$@"
+fi
 if [ "$1" = controls ]; then
     shift
     exec python3 /usr/lib/xr/session-manager/controls_client.py "$@"

@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: xr-session-manager
-Source: https://gitee.com/bigbits/xr-session-manager
+Source: https://github.com/bitsk/xr-session-manager
 
 Files: *
 Copyright: See original source file and license notices

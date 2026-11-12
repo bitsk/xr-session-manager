@@ -14,3 +14,13 @@
 *.changes
 
 !/debian/source/format
+
+# Generated packaging outputs are not maintained source.
+/debian/*.debhelper.log
+/debian/.debhelper/
+/debian/*-stamp
+/debian/files
+/debian/*.substvars
+/obj-*/
+__pycache__/
+*.pyc

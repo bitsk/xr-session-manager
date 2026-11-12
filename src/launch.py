@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from common import PROGRAMS
 from common import current, environment, PREFIX, selected_gamescope, UID, STEAMVR, SYSTEM_ICD, SCENE
 
 assert os.getuid() == UID and os.uname().machine == 'aarch64'
@@ -70,7 +71,7 @@ args = [gamescope['binary'], '--allow-deferred-backend', '--backend', 'openvr',
         '--vr-overlay-key', 'valve.steam.gamepadui.fallback',
         '--vr-app-overlay-key', 'valve.steam.desktopgame',
         '--vr-overlay-show-immediately', '--vr-overlay-physical-width', '1.8',
-        '--', '/usr/bin/python3', str(PREFIX / 'ready.py')]
+        '--', '/usr/bin/python3', str(PROGRAMS / 'ready.py')]
 if SCENE['mode'] == 'steam':
     args.insert(5, '--steam')
 recorded_environment = {

@@ -1,0 +1,59 @@
+{
+  "format": "qiyu-vr-session-profile-v1",
+  "id": "openkylin-xr",
+  "user": "mix",
+  "uid": 1000,
+  "gid": 1000,
+  "home": "/home/mix",
+  "rootfs_id": "a081-openkylin-3.0-arm64",
+  "prefix": "/opt/mix-vr-shell-controller",
+  "runtime_directory": "/run/qiyu-openkylin-xr",
+  "unit": "qiyu-openkylin-xr.service",
+  "tracking_unit": "qiyu-openkylin-xr-tracking.service",
+  "desktop_unit": "lightdm.service",
+  "viewer_unit": "",
+  "sensor_consumers": [
+    "iio-sensor-proxy.service"
+  ],
+  "desktop_owner": {
+    "executable": "/usr/bin/kylin-wlcom",
+    "user_unit": "kylin-wlcom.service",
+    "argv": [
+      "kylin-wlcom",
+      "-s",
+      "ukui-session"
+    ],
+    "environment": {
+      "HOME": "/home/mix",
+      "XDG_RUNTIME_DIR": "/run/user/1000",
+      "XDG_SESSION_TYPE": "wayland"
+    }
+  },
+  "steamvr": "/opt/steamvr",
+  "system_icd": "/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json",
+  "kms_icd": "/opt/mix-steamvr-turnip/share/vulkan/icd.d/freedreno_icd.aarch64.json",
+  "utilities": "/usr/lib/xr/session-manager/utilities",
+  "controller_plan": "/opt/mix-vr-shell-controller/plans/controller-snpe-dsp.json",
+  "scene": {
+    "mode": "command",
+    "wait_for_first_tracking_packet": true,
+    "argv": [
+      "/usr/bin/xr-shell-session",
+      "--prefix",
+      "/usr"
+    ],
+    "working_directory": "/home/mix",
+    "environment": {
+      "XR_RUNTIME_JSON": "/opt/steamvr/steamxr_linuxarm64.json",
+      "DISABLE_GAMESCOPE_WSI": "1",
+      "DISABLE_VULKAN_FDM_INJECTION_LAYER": "1"
+    }
+  },
+  "example_not_device_verified": true,
+  "deployment_note": "Confirm desktop_owner against actual process argv/executable/environment/user cgroup and verify all deployed dependencies; preserve the installed production controller plan and hashes. Example existence is not session validation.",
+  "runtime_library_paths": [
+    "/opt/mix-native-dependencies/lib",
+    "/opt/mix-steamvr-turnip/lib"
+  ],
+  "runtime_environment": {}
+}

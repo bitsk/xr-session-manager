@@ -3,3 +3,5 @@ src/*.sh usr/lib/xr/session-manager/
 plans usr/share/xr/session-manager/
 integration usr/share/xr/session-manager/
 bin/xr-session usr/bin/
+utilities usr/lib/xr/session-manager/
+profiles usr/share/xr/session-manager/

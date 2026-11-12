@@ -8,6 +8,7 @@ import signal
 import subprocess
 import time
 import traceback
+from common import PROGRAMS
 from common import PREFIX, UNIT, current, PROFILE
 from hand_session import HandSession
 from xr_controls import Controls
@@ -69,15 +70,15 @@ try:
             raise RuntimeError('Selected head producer plugin checksum changed')
     controller_env = controller.start()
     result['controllers_started'] = controller.result['started']
-    relay = spawn('relay', ['python3', str(PREFIX / 'relay.py'), '--source', data['raw_socket'],
+    relay = spawn('relay', ['python3', str(PROGRAMS / 'relay.py'), '--source', data['raw_socket'],
                           '--output', data['public_socket'], '--seconds', '0' if data['seconds'] == 0 else '430'])
     observer = spawn('observer', [str(tracking / 'a081-tracking-observe'), data['raw_socket'],
                                   str(raw / 'packets.bin'), '0' if data['seconds'] == 0 else '420'])
-    producer = spawn('producer', ['python3', str(PREFIX / 'run-camera-rig.py'), str(tracking),
+    producer = spawn('producer', ['python3', str(PROGRAMS / 'run-camera-rig.py'), str(tracking),
             str(tracking / 'a081-qvr-stock-live-stream'), '--timing',
             '--gate-seconds', str(data['seconds']), '--gain', str(data['gain_v4l2']),
             '--visual-plugin', str(head_plugin),
-            '--cdsp-runner', str(tracking / 'run-cdsp.sh'),
+            '--cdsp-runner', str(PROGRAMS / 'run-cdsp.sh'),
             '--cdsp-daemon', str(tracking / 'hexagonrpcd-a081')],
             dict(os.environ, A081_QVR_TRACKING_SOCKET=data['raw_socket'], **controller_env, **hands.environment()))
     source_ended = None

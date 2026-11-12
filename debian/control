@@ -5,11 +5,11 @@ Maintainer: openKylin XR SIG <xr@lists.openkylin.top>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
-Vcs-Git: https://gitee.com/bigbits/xr-session-manager.git
-Vcs-Browser: https://gitee.com/bigbits/xr-session-manager
+Vcs-Git: https://github.com/bitsk/xr-session-manager.git
+Vcs-Browser: https://github.com/bitsk/xr-session-manager
 
 Package: xr-session-manager
 Architecture: all
-Depends: ${misc:Depends}, python3, util-linux, procps
+Depends: ${misc:Depends}, python3, python3-gpiod (>= 2.0), util-linux, procps
 Description: XR session supervision and lifecycle tools
  Independently maintained XR component for openKylin integration.

@@ -20,6 +20,13 @@ NORDIC_RESET = Path('/sys/bus/spi/devices/spi3.0/reset_asserted')
 
 
 def trusted_file(path):
+    selected = Path(path)
+    launcher = Path(__file__).resolve().parent / 'run-sdk-worker.sh'
+    if selected in (launcher, Path('/usr/bin/xr-controller-radio'), Path('/usr/bin/xr-nordic-stream')):
+        info = selected.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('Untrusted installed SDK launcher')
+        return selected
     return trusted_opt_path(path)
 
 
@@ -189,7 +196,7 @@ class ControllerSession:
         self.input_directory = input_directory
         read_fd, write_fd = os.pipe2(os.O_CLOEXEC)
         try:
-            relay = ['python3', str(self.prefix / 'controller-relay.py'),
+            relay = ['python3', str(Path(__file__).resolve().parent / 'controller-relay.py'),
                 '--directory', str(directory), '--input-fd', str(read_fd), '--seconds', '0']
             # Continuous operation publishes live packets without an unbounded
             # raw recording. Bounded validation retains its full packet log.

@@ -2,6 +2,7 @@
 import json
 import hashlib
 import os
+import stat
 from pathlib import Path
 import re
 from profile import load as load_profile
@@ -9,6 +10,7 @@ from trusted_paths import trusted_opt_path
 
 PROFILE = load_profile(os.environ['QIYU_VR_SESSION_PROFILE']) if os.environ.get('QIYU_VR_SESSION_PROFILE') else {}
 
+PROGRAMS = Path(__file__).resolve().parent
 PREFIX = Path(PROFILE.get('prefix', '/opt/mix-vr-shell-controller'))
 CURRENT = Path(PROFILE.get('runtime_directory', '/run/mix-vr-shell-controller')) / 'session.json'
 UNIT = PROFILE.get('unit', 'a081-mix-vr-shell-controller.service')
@@ -34,8 +36,14 @@ BASELINE_DRIVER = Path('/opt/mix-steamvr/drivers/monado')
 def check_driver(directory, expected=None):
     directory = Path(directory)
     if directory.name != 'monado':
-        raise RuntimeError('The native driver must be a private /opt/.../monado directory')
-    binary = trusted_opt_path(directory / 'bin/linuxarm64/driver_monado.so')
+        raise RuntimeError('Expected the selected Monado driver directory')
+    if directory == Path('/usr/lib/aarch64-linux-gnu/xr/monado'):
+        binary = directory / 'bin/linuxarm64/driver_monado.so'
+        info = binary.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise RuntimeError('The installed driver must be a root-owned package file')
+    else:
+        binary = trusted_opt_path(directory / 'bin/linuxarm64/driver_monado.so')
     header = binary.read_bytes()[:20]
     if header[:6] != b'\x7fELF\x02\x01' or header[18:20] != b'\xb7\x00':
         raise RuntimeError('Expected a native AArch64 driver ELF')
