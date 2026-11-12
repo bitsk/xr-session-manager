@@ -128,6 +128,9 @@ def environment(data):
         'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/' + str(UID) + '/bus',
         'MIX_VR_SHELL_TRIAL': data['trial'],
     })
+    env['XR_SESSION_CONTROLS_FILE'] = '/run/xr-session/controls.json'
+    env['XR_INPUT_STATUS_FILE'] = '/run/user/' + str(UID) + '/xr-input-status.json'
+    env['XR_SCENE_CONTROLS_STATUS_FILE'] = '/run/user/' + str(UID) + '/xr-scene-controls.json'
     # Persisted root-owned session data reaches every real vrserver child,
     # including systemd launch; this does not rely on caller shell variables.
     for name in ('A081_CONTROLLER_POSE_SOCKET', 'A081_CONTROLLER_POSE_PROFILE'):

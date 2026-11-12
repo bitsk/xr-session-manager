@@ -1,2 +1,6 @@
 #!/bin/sh
+if [ "$1" = controls ]; then
+    shift
+    exec python3 /usr/lib/xr/session-manager/controls_client.py "$@"
+fi
 exec python3 /usr/lib/xr/session-manager/session.py "$@"

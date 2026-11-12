@@ -10,6 +10,7 @@ import time
 import traceback
 from common import PREFIX, UNIT, current, PROFILE
 from hand_session import HandSession
+from xr_controls import Controls
 from controller_session import ControllerSession
 
 assert os.geteuid() == 0
@@ -24,7 +25,8 @@ result = {'trial': data['trial'], 'gate_seconds': data['seconds'], 'gain_v4l2': 
           'physical_accuracy_verified': False, 'controllers_started': False}
 controller = ControllerSession(data, PREFIX)
 hands = HandSession(PROFILE)
-hand_start_attempted = False
+controls = Controls(PROFILE, data, hands)
+control_started = False
 
 
 def stop(_number, _frame):
@@ -81,10 +83,15 @@ try:
     source_ended = None
     while producer.poll() is None and not stopping:
         controller.check()
-        if hands.enabled and not hand_start_attempted and (raw / 'packets.bin').exists() and (raw / 'packets.bin').stat().st_size:
-            hand_start_attempted = True
-            try: hands.start()
-            except Exception as error: hands.result.update({'pass':False,'error':repr(error)})
+        if not control_started and (raw / 'packets.bin').exists() and (raw / 'packets.bin').stat().st_size:
+            if hands.enabled and controls.preferences['hand_tracking_enabled']:
+                try: hands.start()
+                except Exception as error:
+                    hands.result.update({'pass':False,'error':repr(error)})
+                    controls.last_error=str(error)
+                    controls.preferences['hand_tracking_enabled']=False
+            controls.start()
+            control_started = True
         # systemd stops the dependent hand unit before the head unit. The
         # session records shutdown intent before submitting that transaction.
         if hands.started and not current().get('shutdown_requested', False): hands.check()
@@ -109,6 +116,7 @@ except BaseException as error:
 finally:
     # SIGTERM goes to the Python gate owner first. It lowers FSIN, writes S to
     # the existing stop pipe and waits for the original QVR/DSP clean close.
+    controls.close()
     result['hand_tracking'] = hands.stop()
     finish('producer', 55)
     result['controller'] = controller.stop()

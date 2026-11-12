@@ -32,3 +32,9 @@ src/ 导自已发布的 controller-production-runtime 会话包，integration/ �
 保持独立。监督器记录手服务状态，手服务异常释放输入，头部生产者继续运行。
 正常退出先记录 shutdown 意图，按 systemd 依赖顺序停止手消费者和头采集；
 终态检查服务 Result 与退出码，避免把正常的依赖停机记为手服务故障。
+
+## 交互与透视控制
+
+现有追踪监督器提供 `/run/xr-session/controls.sock` 的 seqpacket 控制接口，核对对端身份后接受活动账户的偏好修改。`xr-session controls get` 读取状态；`xr-session controls set input_mode auto` 选择 `auto`、`controllers` 或 `hands`。`hand_tracking_enabled`、`passthrough_enabled`、`double_tap_enabled` 接受 JSON 布尔值。偏好保存在 `/etc/xr/session-controls.json`，发布状态在 `/run/xr-session/controls.json`。
+
+手输入开关只管理已有独立消费者，保留头部相机所有权。透视开关控制 Shell 的读取与显示；相机仍由共同生产者统一管理。双敲检测复用既有头部 IMU 数据流，默认关闭，阈值仍需真人验证。配置可用、源画面到达、渲染生效是不同状态，控制中心显示实际观察到的状态。
