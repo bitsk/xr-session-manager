@@ -1,3 +1,9 @@
+xr-session-manager (0.1.7) unstable; urgency=medium
+
+  * Allow the session IMU consumer through the relay and report double-tap readiness.
+
+ -- bits <bigbits@hackx.cc>  Fri, 13 Nov 2026 10:24:38 +0800
+
 xr-session-manager (0.1.6) unstable; urgency=medium
 
   * Rebuild capsule program bindings and nested checksums from installed packages.

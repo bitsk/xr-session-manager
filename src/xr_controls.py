@@ -122,6 +122,8 @@ class Controls:
         self.stopped = threading.Event()
         self.tap = DoubleTap()
         self.head = None
+        self.last_imu_ns = 0
+        self.imu_samples = 0
         self.retry = 0
         self.events = []
         RUNTIME.mkdir(mode=0o755, exist_ok=True)
@@ -168,6 +170,9 @@ class Controls:
                     preferences=self.preferences, capabilities=dict(hand_tracking=self.available_hands,
                     passthrough=self.available_passthrough, double_tap=self.available_passthrough),
                     hand_service_started=self.hands.started, last_error=self.last_error,
+                    double_tap_ready=self.head is not None and
+                    0 <= time.monotonic_ns()-self.last_imu_ns < 100_000_000,
+                    double_tap_imu_samples=self.imu_samples,
                     double_tap_experimental=True, double_tap_events=self.events[-8:])
 
     def publish(self):
@@ -242,6 +247,11 @@ class Controls:
         if h[:3] != (0x54523841, 2, 240) or h[3] & 3 != 3 or not 0 <= now-h[8] < 100_000_000:
             self.tap.reset()
             return
+        first = not self.last_imu_ns
+        self.last_imu_ns = h[8]
+        self.imu_samples += 1
+        if first:
+            self.publish()
         if self.preferences['double_tap_enabled'] and self.tap.sample(h[8], h[15:18], h[12:15]):
             self.events.append(dict(monotonic_ns=now, event='double-tap'))
             self.apply({'passthrough_enabled': not self.preferences['passthrough_enabled']}, 'double-tap')
@@ -271,7 +281,9 @@ class Controls:
                 except OSError:
                     self.head.close()
                     self.head = None
+                    self.last_imu_ns = 0
                     self.tap.reset()
+                    self.publish()
             if self.server in readable:
                 client, _ = self.server.accept()
                 with client:

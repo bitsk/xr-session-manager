@@ -75,7 +75,9 @@ try:
                     break
                 peer.setblocking(False)
                 pid, uid, gid = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-                if uid != account.pw_uid or len(peers) >= 4:
+                # The root session controls consume the same IMU stream for
+                # double tap. They must not open a second sensor producer.
+                if uid not in (0, account.pw_uid) or len(peers) >= 4:
                     rejected += 1
                     peer.close()
                 else:

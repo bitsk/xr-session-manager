@@ -37,4 +37,4 @@ src/ 导自已发布的 controller-production-runtime 会话包，integration/ �
 
 现有追踪监督器提供 `/run/xr-session/controls.sock` 的 seqpacket 控制接口，核对对端身份后接受活动账户的偏好修改。`xr-session controls get` 读取状态；`xr-session controls set input_mode auto` 选择 `auto`、`controllers` 或 `hands`。`hand_tracking_enabled`、`passthrough_enabled`、`double_tap_enabled` 接受 JSON 布尔值。偏好保存在 `/etc/xr/session-controls.json`，发布状态在 `/run/xr-session/controls.json`。
 
-手输入开关只管理已有独立消费者，保留头部相机所有权。透视开关控制 Shell 的读取与显示；相机仍由共同生产者统一管理。双敲检测复用既有头部 IMU 数据流，默认关闭，阈值仍需真人验证。配置可用、源画面到达、渲染生效是不同状态，控制中心显示实际观察到的状态。
+手输入开关只管理已有独立消费者，保留头部相机所有权。透视开关控制 Shell 的读取与显示；相机仍由共同生产者统一管理。双敲检测复用既有头部 IMU 数据流，转发器允许 root 会话消费者和活动桌面账户。`double_tap_ready` 和 `double_tap_imu_samples` 区分开关状态与实际数据到达。默认关闭，阈值仍需真人验证。配置可用、源画面到达、渲染生效是不同状态，控制中心显示实际观察到的状态。
