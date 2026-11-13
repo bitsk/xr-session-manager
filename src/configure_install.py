@@ -55,9 +55,21 @@ def main():
     original_prefix = profile['prefix']
     original = inside(original_prefix)
     manifest = json.loads((original / 'manifest.json').read_text())
+    forbidden = {'.py', '.pyc', '.sh', '.c', '.cc', '.cpp', '.h', '.hpp', '.patch'}
+
+    def excluded(relative):
+        relative = Path(relative)
+        return (relative.parts[0] == 'monado' or 'runs' in relative.parts or
+                '__pycache__' in relative.parts or relative.suffix in forbidden or
+                str(relative) in ('manifest.json', 'SHA256SUMS'))
+
     for relative, expected in manifest['files'].items():
         if Path(relative).is_absolute() or '..' in Path(relative).parts:
             raise ValueError('Invalid imported asset path')
+        # Historical scripts are neither imported nor executed. Their edits
+        # must not prevent migration of independently checksum-locked assets.
+        if excluded(relative):
+            continue
         if sha(original / relative) != expected:
             raise ValueError('Imported asset checksum changed: ' + relative)
     def relocate(value):
@@ -71,12 +83,10 @@ def main():
     for key in ('_path', '_sha256'): profile.pop(key, None)
     # Runtime data and external libraries can be imported by digest. Executable
     # project scripts always come from the installed session package.
-    forbidden = {'.py', '.pyc', '.sh', '.c', '.cc', '.cpp', '.h', '.hpp', '.patch'}
     capsule.mkdir(parents=True)
     for source in original.rglob('*'):
         relative = source.relative_to(original)
-        if (relative.parts[0] == 'monado' or 'runs' in relative.parts or '__pycache__' in relative.parts or
-                source.suffix in forbidden or str(relative) in ['manifest.json', 'SHA256SUMS']):
+        if excluded(relative):
             continue
         if source.is_file() and not source.is_symlink():
             target = capsule / relative
