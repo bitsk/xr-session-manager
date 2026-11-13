@@ -55,18 +55,32 @@ def main():
     original_prefix = profile['prefix']
     original = inside(original_prefix)
     manifest = json.loads((original / 'manifest.json').read_text())
+    library = Path('/usr/lib/aarch64-linux-gnu/xr')
+    required = {
+        'tracking/a081-qvr-stock-live-stream': library / 'head-tracking/a081-qvr-stock-live-stream',
+        'tracking/liba081-qvr-client-live-stream.so': library / 'head-tracking/liba081-qvr-client-live-stream.so',
+        'tracking/a081-tracking-observe': Path('/usr/bin/xr-head-observe'),
+        'tracking/hexagonrpcd-a081': Path('/usr/bin/xr-hexagonrpcd'),
+        'controller-sdk-pose': library / 'controller/controller-sdk-pose',
+        'controller-radio': Path('/usr/bin/xr-controller-radio'),
+        'controller-observe': Path('/usr/bin/xr-controller-observe'),
+        'liba081-sdk-log.so': library / 'controller/liba081-sdk-log.so',
+        'controller-dsp/libcdsprpc.so': library / 'controller/libcdsprpc.so',
+        'controller-dsp/libcdsprpc_system.so': library / 'controller/libcdsprpc_system.so',
+        'controller-dsp/liba081-snpe-runtime.so': library / 'controller/liba081-snpe-runtime.so',
+    }
     forbidden = {'.py', '.pyc', '.sh', '.c', '.cc', '.cpp', '.h', '.hpp', '.patch'}
 
     def excluded(relative):
         relative = Path(relative)
         return (relative.parts[0] == 'monado' or 'runs' in relative.parts or
                 '__pycache__' in relative.parts or relative.suffix in forbidden or
-                str(relative) in ('manifest.json', 'SHA256SUMS'))
+                str(relative) in ('manifest.json', 'SHA256SUMS') or str(relative) in required)
 
     for relative, expected in manifest['files'].items():
         if Path(relative).is_absolute() or '..' in Path(relative).parts:
             raise ValueError('Invalid imported asset path')
-        # Historical scripts are neither imported nor executed. Their edits
+        # Historical programs are neither imported nor executed. Their edits
         # must not prevent migration of independently checksum-locked assets.
         if excluded(relative):
             continue
@@ -92,20 +106,6 @@ def main():
             target = capsule / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    library = Path('/usr/lib/aarch64-linux-gnu/xr')
-    required = {
-        'tracking/a081-qvr-stock-live-stream': library / 'head-tracking/a081-qvr-stock-live-stream',
-        'tracking/liba081-qvr-client-live-stream.so': library / 'head-tracking/liba081-qvr-client-live-stream.so',
-        'tracking/a081-tracking-observe': Path('/usr/bin/xr-head-observe'),
-        'tracking/hexagonrpcd-a081': Path('/usr/bin/xr-hexagonrpcd'),
-        'controller-sdk-pose': library / 'controller/controller-sdk-pose',
-        'controller-radio': Path('/usr/bin/xr-controller-radio'),
-        'controller-observe': Path('/usr/bin/xr-controller-observe'),
-        'liba081-sdk-log.so': library / 'controller/liba081-sdk-log.so',
-        'controller-dsp/libcdsprpc.so': library / 'controller/libcdsprpc.so',
-        'controller-dsp/libcdsprpc_system.so': library / 'controller/libcdsprpc_system.so',
-        'controller-dsp/liba081-snpe-runtime.so': library / 'controller/liba081-snpe-runtime.so',
-    }
     imported = {}
     for relative, installed in required.items():
         source = inside(installed)

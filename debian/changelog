@@ -1,3 +1,9 @@
+xr-session-manager (0.1.9) unstable; urgency=medium
+
+  * Exclude package-replaced binaries before verifying historical asset input.
+
+ -- bits <bigbits@hackx.cc>  Fri, 13 Nov 2026 10:39:32 +0800
+
 xr-session-manager (0.1.8) unstable; urgency=medium
 
   * Validate imported assets without requiring excluded historical scripts.
