@@ -1,3 +1,9 @@
+xr-session-manager (0.1.11) unstable; urgency=medium
+
+  * Load the exposure tuning table from its installed data package path.
+
+ -- bits <bigbits@hackx.cc>  Fri, 13 Nov 2026 10:53:16 +0800
+
 xr-session-manager (0.1.10) unstable; urgency=medium
 
   * Accept immutable controller plans generated below the installed XR configuration directory.

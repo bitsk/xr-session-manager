@@ -32,7 +32,7 @@ def _float32(value):
 
 class StockOv7251Ae:
     def __init__(self, table_path=None):
-        path = Path(table_path) if table_path else Path(__file__).with_name('stock-ov7251-ae.json')
+        path = Path(table_path) if table_path else Path('/usr/share/xr/session-manager/integration/stock-ov7251-ae.json')
         self.table = json.loads(path.read_text())
         if self.table['source_sha256'] != '96b4370826b4b9351e1c02ae015fe6f1168214aeb8ea0be85091a7cf12058ef6':
             raise ValueError('Unexpected stock OV7251 tuning table')
