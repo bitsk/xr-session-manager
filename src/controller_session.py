@@ -97,7 +97,17 @@ def shared_cdsp_after(directory):
 
 
 def read_plan(path, session_seconds=None):
-    path = trusted_file(path)
+    path = Path(path)
+    if path.is_absolute() and path.is_relative_to('/etc/xr') and '..' not in path.parts:
+        # Installed-profile configuration is distinct from private /opt assets
+        # and executable allowlisting. Check every parent before reading it.
+        for part in reversed((path, *path.parents)):
+            info = part.lstat()
+            expected_type = stat.S_ISREG if part == path else stat.S_ISDIR
+            if not expected_type(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                raise ValueError('Untrusted installed controller plan: ' + str(part))
+    else:
+        path = trusted_file(path)
     data = path.read_bytes()
     plan = json.loads(data)
     required = {'format', 'producer_argv', 'producer_executable_sha256', 'input_socket', 'camera_env'}
